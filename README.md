@@ -30,6 +30,18 @@ SELECT gen_plid('usr') AS user_id;
 
 I wrote this mostly as an exercise to learn more about authoring Postgres extensions and learning about Postgres internals. I have not used in a production system myself. That said it is feature complete and has good test coverage.
 
+## Installation
+
+Use `pgrx` to build and install the extension. Follow their [instructions](https://github.com/pgcentralfoundation/pgrx/blob/master/cargo-pgrx/README.md#installing-your-extension-locally).
+
+This extensions uses shared memory to maintain state for monotonic ID generation. You need to add the following line to your `postgresql.conf` file to allocate enough shared memory to enable this feature.
+
+```text
+shared_preload_libraries = 'plid'
+```
+
+
+
 ## Usage 
 
 ```sql
