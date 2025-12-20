@@ -58,6 +58,25 @@ SELECT 'usr_06DJX8T67BP71A4MYW9VXNR'::plid AS user_id;
 
 Performance is about on par with Postgres's native UUID v7 implementation.
 
+## Binary Representation
+
+```text
+0                   1                   2                   3
+0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|         prefix              |0|      timestamp first 16 bits  |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                     timestamp last 32 bits                    |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                      64 bits  of random data                  |
+|                                                               |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+```
+
+The prefix represents at most 3 characters, each character taking 5 bits, with the last bit of
+the 16 first bit reserved (set to 0). This allows for prefixes of length 1-3 characters.
+The prefix numbering is 'a' = 1, 'b' = 2, ..., 'z' = 26.
+
 ## Inspiration
 
 This project was inspired by [ULID][ulid-spec]. I also took inspiration from [pgrx-ulid][pgrx-ulid] which is a Postgres extension that implements ULID in Rust using the pgrx framework.
