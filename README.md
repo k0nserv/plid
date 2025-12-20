@@ -15,8 +15,11 @@
 * Double click to select the entire ID in most contexts.
 * Optional monotonic counter within the same millisecond like ULID.
 
-```sql
-plid=# SELECT gen_plid('usr') AS user_id;
+Generate a PLID with prefix `usr`:
+
+```text
+-- Generate a PLID with prefix 'usr'
+SELECT gen_plid('usr') AS user_id;
            user_id
 -----------------------------
  usr_06DJX8T67BP71A4MYW9VXNR
@@ -30,27 +33,42 @@ I wrote this mostly as an exercise to learn more about authoring Postgres extens
 ## Usage 
 
 ```sql
-# Generate a PLID with prefix 'usr'
-plid=# SELECT gen_plid('usr') AS user_id;
+-- Generate a PLID with prefix 'usr'
+SELECT gen_plid('usr') AS user_id;
+```
+
+<details>
+<summary>Output</summary>
+
+```text
            user_id
 -----------------------------
  usr_06DKQTMAVXMQ5RAYYSMJCD0
 (1 row)
 ```
 
+</details>
+
 ```sql
-# Generate a PLID with prefix 'usr' and monotonicity enabled
-# If two PLIDs are generated within the same millisecond, the
-# randomness part will be incremented to ensure uniqueness and ordering.
-plid=# SELECT gen_plid_monotonic('usr') AS user_id;
+-- Generate a PLID with prefix 'usr' and monotonicity enabled
+-- Randomness increments within the same millisecond to preserve ordering
+SELECT gen_plid_monotonic('usr') AS user_id;
+```
+
+<details>
+<summary>Output</summary>
+
+```text
            user_id
 -----------------------------
  usr_06DKQTNW858RVRQFRMFBBP0
 (1 row)
 ```
 
+</details>
+
 ```sql
-# Create a table with a PLID primary key
+-- Create a table with a PLID primary key
 CREATE TABLE users (
     id plid PRIMARY KEY DEFAULT gen_plid_monotonic('usr'),
     name TEXT NOT NULL
@@ -58,31 +76,55 @@ CREATE TABLE users (
 ```
 
 ```sql
-# Cast a string to plid
-plid=# SELECT 'usr_06DJX8T67BP71A4MYW9VXNR'::plid AS user_id;
+-- Cast a string to plid
+SELECT 'usr_06DJX8T67BP71A4MYW9VXNR'::plid AS user_id;
+```
+
+<details>
+<summary>Output</summary>
+
+```text
            user_id
 -----------------------------
  usr_06DJX8T67BP71A4MYW9VXNR
 (1 row)
 ```
 
+</details>
+
 ```sql
-# Cast a string with mixed case to plid
-plid=# SELECT 'uSR_06DK5gkRYA7Z7X49zS28R10'::plid;
+-- Cast a string with mixed case to plid
+SELECT 'uSR_06DK5gkRYA7Z7X49zS28R10'::plid;
+```
+
+<details>
+<summary>Output</summary>
+
+```text
             plid
 -----------------------------
  usr_06DK5GKRYA7Z7X49ZS28R10
 (1 row)
 ```
 
+</details>
+
 ```sql
-# Extract timestamptz from a plid
-plid=#  SELECT plid_to_timestamptz('usr_06DJX8T67BP71A4MYW9VXNR') AS ts;
+-- Extract timestamptz from a plid
+SELECT plid_to_timestamptz('usr_06DJX8T67BP71A4MYW9VXNR') AS ts;
+```
+
+<details>
+<summary>Output</summary>
+
+```text
              ts
 ----------------------------
  2025-12-17 23:26:50.938+00
 (1 row)
 ```
+
+</details>
 
 ## Performance
 
