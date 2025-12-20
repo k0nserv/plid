@@ -519,7 +519,15 @@ extension_sql!(
     ]
 );
 
-// TODO: What are the safety requirements?
+
+// `SqlTranslatable` safety requirements:
+// By implementing this, you assert you are not lying to either Postgres or Rust in doing so.
+// This trait asserts a safe translation exists between values of this type from Rust to SQL,
+// or from SQL into Rust. If you are mistaken about how this works, either the Postgres C API
+// or the Rust handling in PGRX may emit undefined behavior.
+//
+// SAFETY: We have implement ed the required methods to correctly map the `Plid` type
+// to the corresponding SQL type `plid`.
 unsafe impl SqlTranslatable for Plid {
     fn argument_sql() -> Result<SqlMapping, ArgumentError> {
         Ok(SqlMapping::literal("plid"))
