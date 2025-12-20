@@ -145,8 +145,10 @@ Performance is about on par with Postgres's native UUID v7 implementation.
 These comparison we run on Postgres 18 on a Macbook Pro with M1 Max chip.
 
 <details>
+
 <summary>Generate one million ids</summary>
-```text`
+
+```text
 plid=# EXPLAIN ANALYZE SELECT gen_plid_monotonic('usr') FROM generate_series(1, 1000000);
                                                                QUERY PLAN
 ----------------------------------------------------------------------------------------------------------------------------------------
