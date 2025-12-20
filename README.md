@@ -142,7 +142,7 @@ SELECT plid_to_timestamptz('usr_06DJX8T67BP71A4MYW9VXNR') AS ts;
 
 Performance is about on par with Postgres's native UUID v7 implementation.
 
-These comparison were run on Postgres 18 on a Macbook Pro with M1 Max chip.
+These comparison were ran on Postgres 18 on a Macbook Pro M1 Max.
 
 <details>
 
@@ -212,7 +212,7 @@ The prefix numbering is 'a' = 1, 'b' = 2, ..., 'z' = 26.
 Things that still need to be done:
 
 - [ ] Get rid of last allocation in Rust for `plid_send` by directly constructing a bytea.
-- [ ] Add some property benchmarks.
+- [ ] Add some proper benchmarks.
 - [ ] Handle edge case of 115 bits of base 32 which should be rejected since we only encode 112 bits.
 - [ ] Hash index support.
 
