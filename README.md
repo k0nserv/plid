@@ -34,7 +34,7 @@ I wrote this mostly as an exercise to learn more about authoring Postgres extens
 
 Use `pgrx` to build and install the extension. Follow their [instructions](https://github.com/pgcentralfoundation/pgrx/blob/master/cargo-pgrx/README.md#installing-your-extension-locally).
 
-This extensions uses shared memory to maintain state for monotonic ID generation. You need to add the following line to your `postgresql.conf` file to allocate enough shared memory to enable this feature.
+This extensions uses shared memory to maintain state for monotonic ID generation. You need to add the following line to your `postgresql.conf` file:
 
 ```text
 shared_preload_libraries = 'plid'
@@ -142,7 +142,7 @@ SELECT plid_to_timestamptz('usr_06DJX8T67BP71A4MYW9VXNR') AS ts;
 
 Performance is about on par with Postgres's native UUID v7 implementation.
 
-These comparison we run on Postgres 18 on a Macbook Pro with M1 Max chip.
+These comparison were run on Postgres 18 on a Macbook Pro with M1 Max chip.
 
 <details>
 
@@ -206,6 +206,15 @@ plid=# EXPLAIN ANALYZE SELECT uuidv4() FROM generate_series(1, 1000000);
 The prefix represents at most 3 characters, each character taking 5 bits, with the last bit of
 the 16 first bit reserved (set to 0). This allows for prefixes of length 1-3 characters.
 The prefix numbering is 'a' = 1, 'b' = 2, ..., 'z' = 26.
+
+## Todo
+
+Things that still need to be done:
+
+- [ ] Get rid of last allocation in Rust for `plid_send` by directly constructing a bytea.
+- [ ] Add some property benchmarks.
+- [ ] Handle edge case of 115 bits of base 32 which should be rejected since we only encode 112 bits.
+- [ ] Hash index support.
 
 ## Inspiration
 
