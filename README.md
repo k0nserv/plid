@@ -31,14 +31,22 @@ I wrote this mostly as an exercise to learn more about authoring Postgres extens
 
 ```sql
 # Generate a PLID with prefix 'usr'
-SELECT gen_plid('usr') AS user_id;
+plid=# SELECT gen_plid('usr') AS user_id;
+           user_id
+-----------------------------
+ usr_06DKQTMAVXMQ5RAYYSMJCD0
+(1 row)
 ```
 
 ```sql
 # Generate a PLID with prefix 'usr' and monotonicity enabled
 # If two PLIDs are generated within the same millisecond, the
 # randomness part will be incremented to ensure uniqueness and ordering.
-SELECT gen_plid_monotonic('usr') AS user_id;
+plid=# SELECT gen_plid_monotonic('usr') AS user_id;
+           user_id
+-----------------------------
+ usr_06DKQTNW858RVRQFRMFBBP0
+(1 row)
 ```
 
 ```sql
@@ -51,7 +59,29 @@ CREATE TABLE users (
 
 ```sql
 # Cast a string to plid
-SELECT 'usr_06DJX8T67BP71A4MYW9VXNR'::plid AS user_id;
+plid=# SELECT 'usr_06DJX8T67BP71A4MYW9VXNR'::plid AS user_id;
+           user_id
+-----------------------------
+ usr_06DJX8T67BP71A4MYW9VXNR
+(1 row)
+```
+
+```sql
+# Cast a string with mixed case to plid
+plid=# SELECT 'uSR_06DK5gkRYA7Z7X49zS28R10'::plid;
+            plid
+-----------------------------
+ usr_06DK5GKRYA7Z7X49ZS28R10
+(1 row)
+```
+
+```sql
+# Extract timestamptz from a plid
+plid=#  SELECT plid_to_timestamptz('usr_06DJX8T67BP71A4MYW9VXNR') AS ts;
+             ts
+----------------------------
+ 2025-12-17 23:26:50.938+00
+(1 row)
 ```
 
 ## Performance
