@@ -142,6 +142,50 @@ SELECT plid_to_timestamptz('usr_06DJX8T67BP71A4MYW9VXNR') AS ts;
 
 Performance is about on par with Postgres's native UUID v7 implementation.
 
+These comparison we run on Postgres 18 on a Macbook Pro with M1 Max chip.
+
+<details>
+<summary>Generate one million ids</summary>
+```text`
+plid=# EXPLAIN ANALYZE SELECT gen_plid_monotonic('usr') FROM generate_series(1, 1000000);
+                                                               QUERY PLAN
+----------------------------------------------------------------------------------------------------------------------------------------
+ Function Scan on generate_series  (cost=0.00..12500.00 rows=1000000 width=16) (actual time=113.870..11945.202 rows=1000000.00 loops=1)
+   Buffers: temp read=1709 written=1709
+ Planning Time: 0.295 ms
+ Execution Time: 11974.366 ms
+(4 rows)
+
+plid=# EXPLAIN ANALYZE SELECT gen_plid('usr') FROM generate_series(1, 1000000);
+                                                               QUERY PLAN
+----------------------------------------------------------------------------------------------------------------------------------------
+ Function Scan on generate_series  (cost=0.00..12500.00 rows=1000000 width=16) (actual time=100.528..11946.489 rows=1000000.00 loops=1)
+   Buffers: temp read=1709 written=1709
+ Planning Time: 0.052 ms
+ Execution Time: 11977.537 ms
+(4 rows)
+
+plid=# EXPLAIN ANALYZE SELECT uuidv7() FROM generate_series(1, 1000000);
+                                                               QUERY PLAN
+----------------------------------------------------------------------------------------------------------------------------------------
+ Function Scan on generate_series  (cost=0.00..12500.00 rows=1000000 width=16) (actual time=102.687..11719.179 rows=1000000.00 loops=1)
+   Buffers: temp read=1709 written=1709
+ Planning Time: 0.048 ms
+ Execution Time: 11747.149 ms
+(4 rows)
+
+plid=# EXPLAIN ANALYZE SELECT uuidv4() FROM generate_series(1, 1000000);
+                                                               QUERY PLAN
+----------------------------------------------------------------------------------------------------------------------------------------
+ Function Scan on generate_series  (cost=0.00..12500.00 rows=1000000 width=16) (actual time=102.711..12073.273 rows=1000000.00 loops=1)
+   Buffers: temp read=1709 written=1709
+ Planning Time: 0.053 ms
+ Execution Time: 12101.747 ms
+(4 rows)
+```
+
+</details>
+
 ## Binary Representation
 
 ```text
