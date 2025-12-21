@@ -28,6 +28,7 @@ const PREFIX_CHARS: &[u8] = b"\0abcdefghijklmnopqrstuvwxyz";
 const POSTGRES_EPOCH_OFFSET: Duration = Duration::from_secs(946684800);
 const PREFIX_LEN: usize = 3;
 const SEPARATOR: char = '_';
+const TIME_MASK: u64 = 0x0000_FFFF_FFFF_FFFF_u64;
 
 /// A ULID inspired id with a compact 128 bit representation.
 ///
@@ -114,7 +115,7 @@ impl Plid {
         }
 
         let out = ((prefix as u128) << 112)
-            | ((time as u128) << 48)
+            | (((time & TIME_MASK) as u128) << 64)
             | (u64::from_ne_bytes(random_bytes) as u128);
 
         // Make sure we are monotonic
@@ -890,7 +891,7 @@ mod rust_tests {
     impl Arbitrary for Plid {
         fn arbitrary(g: &mut Gen) -> Self {
             let prefix = ArbitraryPrefix::arbitrary(g);
-            let time = u64::arbitrary(g) & (!0 >> 16); // Ensure time fits in 48 bits
+            let time = u64::arbitrary(g) & TIME_MASK; // Ensure time fits in 48 bits
             let random: u64 = u64::arbitrary(g);
             Plid::gen(
                 &prefix.0,
