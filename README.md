@@ -207,6 +207,40 @@ plid=# EXPLAIN ANALYZE SELECT uuidv4() FROM generate_series(1, 1000000);
 
 </details>
 
+<details>
+<summary>Insert one million rows</summary>
+
+
+```text
+plid=# CREATE TABLE users (id plid PRIMARY KEY DEFAULT gen_plid_monotonic('usr'));
+CREATE TABLE
+plid=# EXPLAIN ANALYZE INSERT INTO users DEFAULT VALUES FROM generate_series(1, 1000000);
+                                                                 QUERY PLAN
+---------------------------------------------------------------------------------------------------------------------------------------------
+ Insert on test_plid  (cost=0.00..12500.00 rows=0 width=0) (actual time=14373.450..14373.455 rows=0.00 loops=1)
+   Buffers: shared hit=2108066 read=1 dirtied=9259 written=9262, temp read=1709 written=1709
+   ->  Function Scan on generate_series  (cost=0.00..12500.00 rows=1000000 width=16) (actual time=99.407..12392.568 rows=1000000.00 loops=1)
+         Buffers: temp read=1709 written=1709
+ Planning Time: 0.441 ms
+ Execution Time: 14375.142 ms
+(6 rows)
+
+plid=# CREATE TABLE test (key uuid PRIMARY KEY);
+CREATE TABLE
+plid=# EXPLAIN ANALYZE INSERT INTO test SELECT uuidv7() FROM generate_series(1, 1000000);
+                                                                 QUERY PLAN
+---------------------------------------------------------------------------------------------------------------------------------------------
+ Insert on test  (cost=0.00..12500.00 rows=0 width=0) (actual time=13877.219..13877.219 rows=0.00 loops=1)
+   Buffers: shared hit=2108066 read=1 dirtied=9259 written=9780, temp read=1709 written=1709
+   ->  Function Scan on generate_series  (cost=0.00..12500.00 rows=1000000 width=16) (actual time=92.268..11956.284 rows=1000000.00 loops=1)
+         Buffers: temp read=1709 written=1709
+ Planning Time: 0.040 ms
+ Execution Time: 13878.977 ms
+(6 rows)
+```
+
+</details>
+
 ## Binary Representation
 
 ```text
