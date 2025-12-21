@@ -70,7 +70,7 @@ const SEPARATOR: char = '_';
 /// The prefix represents at most 3 characters, each character taking 5 bits, with the last bit of
 /// the 16 first bit reserved (set to 0). This allows for prefixes of length 1-3 characters.
 /// The prefix numbering is 'a' = 1, 'b' = 2, ..., 'z' = 26.
-#[derive(Debug, PartialEq, PartialOrd, Eq, Hash, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Hash, Ord)]
 #[repr(C)]
 pub struct Plid(u128);
 
@@ -554,6 +554,8 @@ impl FromStr for Plid {
         if rest.len() != 23 {
             return Err(Error::InvalidIdPortion { length: rest.len() });
         }
+        // NB: 23 bytes of base32 encodes to 15 bytes of data (23 * 5 = 115 bits). However, we
+        // only need 14 bytes thus we ignore the last 2 bits of the decoded data.
         let mut bytes = [0u8; 16];
         base32::decode(rest, &mut bytes[2..]).map_err(Error::DecodeError)?;
         let time_and_random = u128::from_be_bytes(bytes[..].try_into().unwrap());
@@ -746,6 +748,9 @@ mod rust_tests {
 
         let plid = super::Plid(0x1800_019b1a078508_5b39ca05003e1307);
         assert_eq!(plid.to_string(), "c_06DHM1W511DKKJG500Z161R");
+
+        let plid = super::Plid(0x0800_ffffffffffff_ffffffffffffffff);
+        assert_eq!(plid.to_string(), "a_ZZZZZZZZZZZZZZZZZZZZZZR");
     }
 
     #[test]
@@ -817,6 +822,16 @@ mod rust_tests {
         let plid = "_06DHM1W511DKKJG500Z161R";
         let result = plid.parse::<Plid>();
         assert_eq!(result, Err(Error::PrefixTooShort));
+    }
+
+    #[test]
+    fn test_plid_parse_no_nil_prefix() {
+        let plid = "\0_06DHM1W511DKKJG500Z161R";
+        let result = plid.parse::<Plid>();
+        assert_eq!(result, Err(Error::InvalidPrefixCharacter {
+            at: 0,
+            character: '\0'
+        }));
     }
 
     #[test]

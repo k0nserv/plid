@@ -207,13 +207,38 @@ The prefix represents at most 3 characters, each character taking 5 bits, with t
 the 16 first bit reserved (set to 0). This allows for prefixes of length 1-3 characters.
 The prefix numbering is 'a' = 1, 'b' = 2, ..., 'z' = 26.
 
+Prefix encoding:
+
+
+### String Representation
+
+The string representation is similar to ULID, with the addition of the prefix and an underscore `_`
+separating the prefix from the rest of the ID.
+
+### Encoding
+
+
+The string representation is constructed as follows:
+
+1. Encode the prefix (1-3 characters) as ASCII lowercase letters `a-z`. If a prefix group it and the remainder of the prefix is omitted. There must be at least one character in the prefix.
+2. Append an underscore `_`.
+3. Encode the remaining 112 bits (14 bytes) using Crockford's Base32 encoding. Use big-endian byte order.
+
+### Decoding
+
+To decode a PLID string representation back to its binary form:
+
+1. Split the string at the underscore `_` to separate the prefix from the encoded part. Error if there is no underscore or if the prefix is empty.
+2. Decode the prefix characters back to their 5-bit representation error on invalid characters and ensure the prefix length is between 1 and 3 characters.
+3. Decode the remaining part using Crockford's Base32 decoding to get the 112 bits (14 bytes) in big endian byte order. Skip the last 2 bit from the last character for example `ZZZZZZZZZZZZZZZZZZZZZZZ` decodes to `ffffffffffffffffffffffffffff`.
+
+
 ## Todo
 
 Things that still need to be done:
 
 - [ ] Get rid of last allocation in Rust for `plid_send` by directly constructing a bytea.
 - [ ] Add some proper benchmarks.
-- [ ] Handle edge case of 115 bits of base 32 which should be rejected since we only encode 112 bits.
 - [ ] Hash index support.
 
 ## Inspiration
