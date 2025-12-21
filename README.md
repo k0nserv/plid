@@ -142,6 +142,8 @@ SELECT plid_to_timestamptz('usr_06DJX8T67BP71A4MYW9VXNR') AS ts;
 -- Turn a timestamptz into a plid with prefix 'usr'.
 -- The random bits are all set to 1.
 -- This is useful for range queries based on timestamp.
+-- For example, to get all plids after a certain timestamp.
+-- SELECT * FROM users WHERE id > timestamptz_to_plid('2025-12-21T13:37:00Z', 'usr');
 SELECT timestamptz_to_plid('2025-12-21T13:37:00Z', 'usr') AS plid;
 ```
 
