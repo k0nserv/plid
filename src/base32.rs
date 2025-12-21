@@ -174,6 +174,8 @@ impl<'b> From<&'b [u8]> for Base32Encoder<'b> {
 
 #[cfg(test)]
 mod tests {
+    use quickcheck_macros::quickcheck;
+
     use super::*;
 
     #[test]
@@ -187,38 +189,15 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_base_32_symmetry() {
-        let data = b"Hello, World!";
+    #[quickcheck]
+    fn prop_base32_symmetry(data: Vec<u8>) -> bool {
         let encoder = Base32Encoder::from(data.as_slice());
         let encoded = format!("{}", encoder);
 
         let mut decoded = vec![0u8; data.len()];
-        decode(&encoded, &mut decoded).unwrap();
-
-        assert_eq!(data.as_slice(), decoded.as_slice());
-    }
-
-    #[ignore]
-    #[test]
-    fn test_base_32_symmetry_fuzz() {
-        use rand::prelude::*;
-
-        let mut rng = rand::rng();
-        let mut bytes: [u8; 32768] = [0; 32768];
-        loop {
-            let len = rng.random::<u64>() % 100;
-            rng.fill(&mut bytes[..len as usize]);
-
-            let data = &bytes[..len as usize];
-
-            let encoder = Base32Encoder::from(data);
-            let encoded = format!("{}", encoder);
-
-            let mut decoded = vec![0u8; data.len()];
-            decode(&encoded, &mut decoded).unwrap();
-
-            assert_eq!(data, decoded.as_slice());
+        match decode(&encoded, &mut decoded) {
+            Ok(()) => data.as_slice() == decoded.as_slice(),
+            Err(_) => false,
         }
     }
 }

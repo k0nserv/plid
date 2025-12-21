@@ -26,7 +26,8 @@ pgrx = "=0.16.1"
 
 [dev-dependencies]
 pgrx-tests = "=0.16.1"
-rand = "0.9"
+quickcheck = "1.0.3"
+quickcheck_macros = "1"
 
 [profile.dev]
 panic = "unwind"

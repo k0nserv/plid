@@ -101,6 +101,10 @@ impl Plid {
     ) -> Result<Self> {
         let prefix = map_prefix(prefix)?;
         let time = make_time();
+        if time >> 48 != 0 {
+            // Timestamp too large to fit in 48 bits
+            return Err(Error::TimestampOverflow);
+        }
 
         let random_bytes = 0u64.to_ne_bytes();
         let mut random_bytes = random_bytes;
@@ -110,7 +114,7 @@ impl Plid {
         }
 
         let out = ((prefix as u128) << 112)
-            | ((time as u128) << 64)
+            | ((time as u128) << 48)
             | (u64::from_ne_bytes(random_bytes) as u128);
 
         // Make sure we are monotonic
@@ -122,8 +126,8 @@ impl Plid {
         Self((self.0 & 0xFFFF_FFFF_FFFF_FFFF_0000_0000_0000_0000) | (new_random as u128))
     }
 
-    fn prefix(&self) -> [u8; PREFIX_LEN] {
-        // 1111 1222 2233 333R
+    fn as_prefix_bytes(&self) -> [u8; PREFIX_LEN] {
+        // FFFF FSSS SSTT TTTR
         let mut prefix = [0u8; PREFIX_LEN];
         let p = (self.0 >> 112) as u16;
 
@@ -215,6 +219,7 @@ pub enum Error {
     DecodeError(base32::DecodeError),
     // The rest portion must be exactly 23 characters long
     InvalidIdPortion { length: usize },
+    TimestampOverflow,
 }
 
 type Result<T, E = Error> = core::result::Result<T, E>;
@@ -260,6 +265,11 @@ fn map_prefix(prefix: &str) -> Result<u16> {
     }
 
     Ok(out)
+}
+
+fn prefix_bytes_as_str(prefix: &[u8; PREFIX_LEN]) -> &str {
+    let first_zero = prefix.iter().position(|&c| c == 0).unwrap_or(PREFIX_LEN);
+    str::from_utf8(&prefix[..first_zero]).expect("Valid UTF-8 because only a-z used")
 }
 
 #[pg_extern(immutable)]
@@ -519,7 +529,6 @@ extension_sql!(
     ]
 );
 
-
 // `SqlTranslatable` safety requirements:
 // By implementing this, you assert you are not lying to either Postgres or Rust in doing so.
 // This trait asserts a safe translation exists between values of this type from Rust to SQL,
@@ -593,12 +602,7 @@ fn pg_no_monotonicity(plid: Plid) -> Result<Plid> {
 fn gen_plid(prefix: &str) -> Result<BoxedPlid> {
     // SAFETY: C FFI
     let mut alloc = unsafe { PgBox::<Plid>::alloc() };
-    let plid = Plid::gen(
-        prefix,
-        pg_time_millis,
-        pg_strong_random,
-        pg_no_monotonicity,
-    )?;
+    let plid = Plid::gen(prefix, pg_time_millis, pg_strong_random, pg_no_monotonicity)?;
     *alloc = plid;
 
     Ok(alloc.into_pg_boxed())
@@ -632,24 +636,18 @@ fn plid_to_timestamp(plid: BoxedPlid) -> Timestamp {
 
 #[pg_extern(immutable, parallel_safe, strict)]
 fn plid_to_prefix(plid: BoxedPlid) -> String {
-    let prefix = plid.prefix();
-    let valid_prefix_slice = {
-        let first_zero = prefix.iter().position(|&c| c == 0).unwrap_or(PREFIX_LEN);
-        str::from_utf8(&prefix[..first_zero]).expect("Valid UTF-8 because only a-z used")
-    };
-    valid_prefix_slice.to_string()
+    let bytes = plid.as_prefix_bytes();
+    let prefix = prefix_bytes_as_str(&bytes);
+    prefix.to_string()
 }
 
 impl fmt::Display for Plid {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let prefix = self.prefix();
-        let valid_prefix_slice = {
-            let first_zero = prefix.iter().position(|&c| c == 0).unwrap_or(PREFIX_LEN);
-            str::from_utf8(&prefix[..first_zero]).expect("Valid UTF-8 because only a-z used")
-        };
+        let prefix_bytes = self.as_prefix_bytes();
+        let prefix = prefix_bytes_as_str(&prefix_bytes);
         let rest = &self.0.to_be_bytes()[2..];
         let base32_encoder: Base32Encoder = rest.into();
-        write!(f, "{}{}{}", valid_prefix_slice, SEPARATOR, base32_encoder)
+        write!(f, "{}{}{}", prefix, SEPARATOR, base32_encoder)
     }
 }
 
@@ -681,6 +679,10 @@ impl fmt::Display for Error {
                 "Invalid ID portion length ({} characters); must be exactly 23 characters",
                 length
             ),
+            Error::TimestampOverflow => write!(
+                f,
+                "Timestamp overflowed 48 bits; too large to encode in Plid"
+            ),
         }
     }
 }
@@ -692,27 +694,11 @@ unsafe impl PGRXSharedMemory for MonotonicityState {}
 
 #[cfg(test)]
 mod rust_tests {
-    use rand::Rng;
-    use std::time::SystemTime;
+    use quickcheck::{Arbitrary, Gen};
+
+    use quickcheck_macros::quickcheck;
 
     use super::*;
-
-    fn test_make_time() -> u64 {
-        SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64
-    }
-
-    fn test_make_random(bytes: &mut [u8]) -> bool {
-        rand::rng().fill(bytes);
-        true
-    }
-
-    fn test_ensure_monotonicity(plid: Plid) -> Result<Plid> {
-        // TODO: Add a lock here to simulate the shared memory lock
-        Ok(plid)
-    }
 
     #[test]
     fn test_gen_monotonicity_overflow() {
@@ -828,10 +814,13 @@ mod rust_tests {
     fn test_plid_parse_no_nil_prefix() {
         let plid = "\0_06DHM1W511DKKJG500Z161R";
         let result = plid.parse::<Plid>();
-        assert_eq!(result, Err(Error::InvalidPrefixCharacter {
-            at: 0,
-            character: '\0'
-        }));
+        assert_eq!(
+            result,
+            Err(Error::InvalidPrefixCharacter {
+                at: 0,
+                character: '\0'
+            })
+        );
     }
 
     #[test]
@@ -874,40 +863,61 @@ mod rust_tests {
         assert!(lhs < rhs);
     }
 
-    #[ignore]
-    #[test]
-    fn test_string_order_matches_plid_order() {
-        // This is a fuzz style test to ensure that the string representation ordering
-        // matches the internal plid ordering.
-        // Run it for as long as you like to get more confidence.
-        // TODO: Rewrite as quickcheck test
-        loop {
-            let plid1 = Plid::gen(
-                "c",
-                test_make_time,
-                test_make_random,
-                test_ensure_monotonicity,
+    #[quickcheck]
+    fn prop_plid_sorting_matches_string_sorting(plid1: Plid, plid2: Plid) -> bool {
+        let str1 = plid1.to_string();
+        let str2 = plid2.to_string();
+
+        let ord_plid = plid1.cmp(&plid2);
+        let ord_str = str1.cmp(&str2);
+
+        ord_plid == ord_str
+    }
+
+    #[quickcheck]
+    fn prop_plid_prefix_matches(prefix: ArbitraryPrefix) -> bool {
+        let plid = Plid::gen(&prefix.0, || 0, |_| true, |p| Ok(p))
+            .expect("Plid generation should not fail");
+
+        let prefix_bytes = plid.as_prefix_bytes();
+        let prefix_str = prefix_bytes_as_str(&prefix_bytes);
+
+        prefix_str == prefix.0
+    }
+
+    static ASCII_LOWERCASE: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+
+    impl Arbitrary for Plid {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let prefix = ArbitraryPrefix::arbitrary(g);
+            let time = u64::arbitrary(g) & (!0 >> 16); // Ensure time fits in 48 bits
+            let random: u64 = u64::arbitrary(g);
+            Plid::gen(
+                &prefix.0,
+                || time,
+                |bytes| {
+                    bytes[..8].copy_from_slice(&random.to_ne_bytes());
+                    true
+                },
+                |p| Ok(p),
             )
-            .unwrap();
-            let plid2 = Plid::gen(
-                "c",
-                test_make_time,
-                test_make_random,
-                test_ensure_monotonicity,
-            )
-            .unwrap();
+            .expect("Arbitrary Plid generation should not fail")
+        }
+    }
 
-            let str1 = plid1.to_string();
-            let str2 = plid2.to_string();
+    #[derive(Debug, Clone)]
+    struct ArbitraryPrefix(String);
 
-            let ord_plid = plid1.cmp(&plid2);
-            let ord_str = str1.cmp(&str2);
-
-            assert_eq!(
-                ord_plid, ord_str,
-                "Ordering mismatch: plid1={} plid2={}, plid ord={:?}, str ord={:?}",
-                str1, str2, ord_plid, ord_str
-            );
+    impl Arbitrary for ArbitraryPrefix {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let prefix_len = u8::arbitrary(g) % 3 + 1; // 1 to 3
+            let prefix: String = (0..prefix_len)
+                .map(|_| {
+                    let c = g.choose(ASCII_LOWERCASE).copied().unwrap();
+                    c as char
+                })
+                .collect();
+            ArbitraryPrefix(prefix)
         }
     }
 }
@@ -968,10 +978,9 @@ mod tests {
 
     #[pg_test]
     fn test_plid_is_16_bytes() {
-        let length: i32 =
-            Spi::get_one("SELECT pg_column_size('c_06DHM1W511DKKJG500Z161R'::plid);")
-                .expect("pg_column_size to not fail")
-                .expect("length not null");
+        let length: i32 = Spi::get_one("SELECT pg_column_size('c_06DHM1W511DKKJG500Z161R'::plid);")
+            .expect("pg_column_size to not fail")
+            .expect("length not null");
         assert_eq!(length, 16);
     }
 

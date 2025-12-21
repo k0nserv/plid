@@ -233,7 +233,7 @@ separating the prefix from the rest of the ID.
 
 The string representation is constructed as follows:
 
-1. Encode the prefix (1-3 characters) as ASCII lowercase letters `a-z`. If a prefix group it and the remainder of the prefix is omitted. There must be at least one character in the prefix.
+1. Encode the prefix (1-3 characters) as ASCII lowercase letters `a-z`. If a prefix group is 0 it and the remainder of the prefix is omitted. There must be at least one character in the prefix.
 2. Append an underscore `_`.
 3. Encode the remaining 112 bits (14 bytes) using Crockford's Base32 encoding. Use big-endian byte order.
 
