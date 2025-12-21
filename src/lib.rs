@@ -655,7 +655,7 @@ fn timestamptz_to_plid(ts: TimestampWithTimeZone, prefix: &str) -> Result<BoxedP
 
             true
         },
-        |plid| Ok(plid),
+        Ok
     )?;
     *alloc = plid;
 
