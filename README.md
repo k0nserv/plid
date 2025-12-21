@@ -209,6 +209,19 @@ The prefix numbering is 'a' = 1, 'b' = 2, ..., 'z' = 26.
 
 Prefix encoding:
 
+```text
+0                   1
+0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|F F F F F S S S S S T T T T T|0|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+```
+
+The `F` bits represent the first character of the prefix, the `S` bits represent the second, and the `T` bits represent the third. The last bit is always 0.
+
+Values for the 5 bit chunks larger than 26 are reserved and should not be used.
+
+
 
 ### String Representation
 
