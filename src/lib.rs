@@ -171,9 +171,6 @@ struct InitializedMonotonicityState {
     timestamp: u64,
     /// The last random value used for this timestamp.
     last_random: u64,
-    /// Initial random value for this timestamp.
-    /// Used to detect overflow.
-    initial_random: u64,
 }
 
 impl MonotonicityState {
@@ -183,7 +180,6 @@ impl MonotonicityState {
                 let new_state = InitializedMonotonicityState {
                     timestamp: plid.as_timestamp_u64(),
                     last_random: plid.as_random_bits_u64(),
-                    initial_random: plid.as_random_bits_u64(),
                 };
                 *self = MonotonicityState::Initialized(new_state);
                 return Ok(plid);
@@ -195,13 +191,12 @@ impl MonotonicityState {
             // New timestamp, reset state
             current.timestamp = plid.as_timestamp_u64();
             current.last_random = plid.as_random_bits_u64();
-            current.initial_random = plid.as_random_bits_u64();
             return Ok(plid);
         }
 
         // Same timestamp, increment random portion
         let new_random = current.last_random.wrapping_add(1);
-        if new_random == current.initial_random {
+        if new_random == 0 {
             return Err(Error::RandomOverflow);
         }
         current.last_random = new_random;
