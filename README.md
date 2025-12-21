@@ -138,6 +138,25 @@ SELECT plid_to_timestamptz('usr_06DJX8T67BP71A4MYW9VXNR') AS ts;
 
 </details>
 
+```sql
+-- Turn a timestamptz into a plid with prefix 'usr'.
+-- The random bits are all set to 1.
+-- This is useful for range queries based on timestamp.
+SELECT timestamptz_to_plid('2025-12-21T13:37:00Z', 'usr') AS plid;
+```
+
+<details>
+<summary>Output</summary>
+
+```text
+            plid
+-----------------------------
+ usr_06DM285GC3ZZZZZZZZZZZZR
+(1 row)
+```
+
+</details>
+
 ## Performance
 
 Performance is about on par with Postgres's native UUID v7 implementation.

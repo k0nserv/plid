@@ -2,6 +2,7 @@ use core::fmt;
 use std::ffi::CStr;
 use std::io::Write as _;
 use std::str::FromStr;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use pgrx::pgrx_sql_entity_graph::metadata::{
@@ -310,6 +311,7 @@ fn plid_out(plid: BoxedPlid) -> &'static CStr {
 /// This matches Posgres's internal representation of other 128 bit types like UUID.
 type BoxedPlid = PgBox<Plid>;
 
+/// Send an instance of a plid in Postgres's internal format, return a bytea.
 #[pg_extern(immutable, strict, parallel_safe)]
 fn plid_send(plid: BoxedPlid) -> Vec<u8> {
     // TODO: Figure out how to avoid the allocation on the Rust side by directly using `pg_sys` to
@@ -341,6 +343,7 @@ fn plid_send(plid: BoxedPlid) -> Vec<u8> {
     // }
 }
 
+/// Receive an instance of a plid in Postgres's internal format, return a BoxedPlid.
 #[pg_extern(immutable, strict, parallel_safe)]
 fn plid_recv(mut internal: pgrx::datum::Internal) -> BoxedPlid {
     // SAFETY: Postgres guarantees that that this is a valid StringInfoData pointer
@@ -599,6 +602,7 @@ fn pg_no_monotonicity(plid: Plid) -> Result<Plid> {
     Ok(plid)
 }
 
+/// Generate a new Plid with the given prefix.
 #[pg_extern(parallel_safe, strict)]
 fn gen_plid(prefix: &str) -> Result<BoxedPlid> {
     // SAFETY: C FFI
@@ -633,6 +637,34 @@ fn plid_to_timestamptz(plid: BoxedPlid) -> TimestampWithTimeZone {
 #[pg_extern(immutable, parallel_safe, strict)]
 fn plid_to_timestamp(plid: BoxedPlid) -> Timestamp {
     plid_to_timestamptz(plid).into()
+}
+
+static UNIX_EPOCH: LazyLock<TimestampWithTimeZone> = LazyLock::new(|| to_timestamp(0.0));
+/// Turn a timestamp with time zone into a Plid with the given prefix.
+/// The random bits are set to all 1s.
+/// This is useful for generating plids for range queries.
+#[pg_extern(immutable, parallel_safe, strict)]
+fn timestamptz_to_plid(ts: TimestampWithTimeZone, prefix: &str) -> Result<BoxedPlid> {
+    let duration_since_epoch: Duration = (ts - *UNIX_EPOCH)
+        .try_into()
+        .expect("Timestamp to be after UNIX epoch");
+    let millis = duration_since_epoch.as_millis() as u64;
+
+    // SAFETY: C FFI
+    let mut alloc = unsafe { PgBox::<Plid>::alloc() };
+    let plid = Plid::gen(
+        prefix,
+        || millis,
+        |bytes| {
+            bytes.fill(0xFF);
+
+            true
+        },
+        |plid| Ok(plid),
+    )?;
+    *alloc = plid;
+
+    Ok(alloc.into_pg_boxed())
 }
 
 #[pg_extern(immutable, parallel_safe, strict)]
