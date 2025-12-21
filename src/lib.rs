@@ -709,6 +709,19 @@ mod rust_tests {
     }
 
     #[test]
+    fn test_gen_high_timestamp() {
+        // The largest valid timestamp is 0x0000_FFFF_FFFF_FFFF
+        // +010889-08-02T05:31:50.655Z
+        let date = 0x0000_FFFF_FFFF_FFFF_u64;
+        let result =
+            Plid::gen("zzz", || date, |_| true, |plid| Ok(plid)).expect("Should generate Plid");
+
+        assert_eq!(result.as_timestamp_u64(), date);
+        assert_eq!(result.as_prefix_bytes(), *b"zzz");
+        assert_eq!(result.as_random_bits_u64(), 0);
+    }
+
+    #[test]
     fn test_map_prefix() {
         let mapped = map_prefix("cba").unwrap();
         // Top 5 bits = c = 3
