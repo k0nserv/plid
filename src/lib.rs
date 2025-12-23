@@ -95,7 +95,7 @@ impl Plid {
     /// monotonic with respect to previously generated Plids. This is necessary when
     /// multiple Plids are generated with the same timestamp. The function should return
     /// Ok(plid) if the plid is valid, or an error if monotonicity cannot be ensured.
-    fn gen(
+    pub fn gen(
         prefix: &str,
         make_time: impl Fn() -> u64,
         make_random: impl Fn(&mut [u8]) -> bool,
@@ -221,6 +221,7 @@ pub enum Error {
 
 type Result<T, E = Error> = core::result::Result<T, E>;
 
+#[inline]
 fn map_prefix(prefix: &str) -> Result<u16> {
     if prefix.is_empty() {
         return Err(Error::PrefixTooShort);
@@ -550,15 +551,11 @@ impl FromStr for Plid {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let mut parts = s.split(SEPARATOR);
-        let Some(prefix) = parts.next() else {
-            return Err(Error::MissingSeparator);
+        let Some((prefix, rest)) = s.split_once(SEPARATOR) else {
+            return Err(Error::MissingSeparator)
         };
 
         let prefix = map_prefix(prefix)?;
-        let rest = parts
-            .next()
-            .expect("There must be a rest part after the separator");
         if rest.len() != 23 {
             return Err(Error::InvalidIdPortion { length: rest.len() });
         }
@@ -655,7 +652,7 @@ fn timestamptz_to_plid(ts: TimestampWithTimeZone, prefix: &str) -> Result<BoxedP
 
             true
         },
-        Ok
+        Ok,
     )?;
     *alloc = plid;
 

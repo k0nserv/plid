@@ -11,6 +11,13 @@ crate-type = ["cdylib", "lib"]
 name = "pgrx_embed_plid"
 path = "./src/bin/pgrx_embed.rs"
 
+[[bench]]
+name = "bench"
+harness = false
+
+[profile.bench]
+debug = true
+
 [features]
 default = ["pg13"]
 pg13 = ["pgrx/pg13", "pgrx-tests/pg13" ]
@@ -28,6 +35,7 @@ pgrx = "=0.16.1"
 pgrx-tests = "=0.16.1"
 quickcheck = "1.0.3"
 quickcheck_macros = "1"
+criterion = "0.8"
 
 [profile.dev]
 panic = "unwind"

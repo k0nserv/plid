@@ -306,7 +306,6 @@ To decode a PLID string representation back to its binary form:
 Things that still need to be done:
 
 - [ ] Get rid of last allocation in Rust for `plid_send` by directly constructing a bytea.
-- [ ] Add some proper benchmarks.
 - [ ] Hash index support.
 
 ## Inspiration
