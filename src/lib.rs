@@ -29,7 +29,6 @@ const PREFIX_CHARS: &[u8] = b"\0abcdefghijklmnopqrstuvwxyz";
 const POSTGRES_EPOCH_OFFSET: Duration = Duration::from_secs(946684800);
 const PREFIX_LEN: usize = 3;
 const SEPARATOR: char = '_';
-const TIME_MASK: u64 = 0x0000_FFFF_FFFF_FFFF_u64;
 
 /// A ULID inspired id with a compact 128 bit representation.
 ///
@@ -73,8 +72,10 @@ const TIME_MASK: u64 = 0x0000_FFFF_FFFF_FFFF_u64;
 /// the 16 first bit reserved (set to 0). This allows for prefixes of length 1-3 characters.
 /// The prefix numbering is 'a' = 1, 'b' = 2, ..., 'z' = 26.
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Hash, Ord)]
-#[repr(C)]
-pub struct Plid(u128);
+// Alignment of 1 to match Postgres's `char` alignment for types.
+// When Postgres reads a value from a heap tuple it allocates with this alignment.
+#[repr(C, align(1))]
+pub struct Plid([u8; 16]);
 
 extension_sql!(
     r#"CREATE TYPE plid;"#,
@@ -101,23 +102,23 @@ impl Plid {
         make_random: impl Fn(&mut [u8]) -> bool,
         ensure_monotonicity: impl Fn(Plid) -> Result<Plid>,
     ) -> Result<Self> {
+        let mut out = [0u8; 16];
+
         let prefix = map_prefix(prefix)?;
+        out[0..2].copy_from_slice(&prefix.to_be_bytes());
+
         let time = make_time();
         if time >> 48 != 0 {
             // Timestamp too large to fit in 48 bits
             return Err(Error::TimestampOverflow);
         }
+        out[2..8].copy_from_slice(&time.to_be_bytes()[2..8]); // Take last 6 bytes of u64
 
-        let random_bytes = 0u64.to_ne_bytes();
-        let mut random_bytes = random_bytes;
-        let success = make_random(&mut random_bytes);
+        let success = make_random(&mut out[8..16]);
         if !success {
             return Err(Error::NoStrongRandom);
         }
 
-        let out = ((prefix as u128) << 112)
-            | (((time & TIME_MASK) as u128) << 64)
-            | (u64::from_ne_bytes(random_bytes) as u128);
 
         // Make sure we are monotonic
         ensure_monotonicity(Self(out))
@@ -125,13 +126,15 @@ impl Plid {
 
     /// Create a new Plid with the same timestamp but new random bits.
     fn with_random_bits_u64(self, new_random: u64) -> Self {
-        Self((self.0 & 0xFFFF_FFFF_FFFF_FFFF_0000_0000_0000_0000) | (new_random as u128))
+        let mut result = self.0;
+        result[8..16].copy_from_slice(&new_random.to_be_bytes());
+        Self(result)
     }
 
     fn as_prefix_bytes(&self) -> [u8; PREFIX_LEN] {
         // FFFF FSSS SSTT TTTR
         let mut prefix = [0u8; PREFIX_LEN];
-        let p = (self.0 >> 112) as u16;
+        let p = u16::from_be_bytes([self.0[0], self.0[1]]);
 
         let i1 = (p >> 11) as usize;
         let i2 = ((p & 0x7C0) >> 6) as usize;
@@ -150,11 +153,16 @@ impl Plid {
     }
 
     fn as_timestamp_u64(&self) -> u64 {
-        ((self.0 >> 64) & 0x0000_FFFF_FFFF_FFFF) as u64
+        let mut bytes = [0u8; 8];
+        bytes[2..8].copy_from_slice(&self.0[2..8]);
+        u64::from_be_bytes(bytes)
     }
 
     fn as_random_bits_u64(&self) -> u64 {
-        self.0 as u64
+        u64::from_be_bytes([
+            self.0[8], self.0[9], self.0[10], self.0[11],
+            self.0[12], self.0[13], self.0[14], self.0[15],
+        ])
     }
 }
 
@@ -313,8 +321,7 @@ type BoxedPlid = PgBox<Plid>;
 fn plid_send(plid: BoxedPlid) -> Vec<u8> {
     // TODO: Figure out how to avoid the allocation on the Rust side by directly using `pg_sys` to
     // construct a `bytea`.
-    let bytes = plid.0.to_ne_bytes();
-    bytes.to_vec()
+    plid.0.to_vec()
 
     // C code from uuid.h:
     //
@@ -353,7 +360,7 @@ fn plid_recv(mut internal: pgrx::datum::Internal) -> BoxedPlid {
     let bytes: [u8; 16] = slice.try_into().expect("16 bytes for Plid");
     // SAFETY: C FFI
     let mut alloc = unsafe { PgBox::<Plid>::alloc() };
-    let plid = Plid(u128::from_ne_bytes(bytes));
+    let plid = Plid(bytes);
     *alloc = plid;
 
     alloc.into_pg_boxed()
@@ -366,7 +373,8 @@ extension_sql!(
         INPUT = plid_in,
         OUTPUT = plid_out,
         RECEIVE = plid_recv,
-        SEND = plid_send
+        SEND = plid_send,
+        ALIGNMENT = char
     );
 "#,
     name = "create_plid_type",
@@ -564,11 +572,10 @@ impl FromStr for Plid {
         // NB: 23 bytes of base32 encodes to 15 bytes of data (23 * 5 = 115 bits). However, we
         // only need 14 bytes thus we ignore the last 2 bits of the decoded data.
         let mut bytes = [0u8; 16];
+        bytes[0..2].copy_from_slice(&prefix.to_be_bytes());
         base32::decode(rest, &mut bytes[2..]).map_err(Error::DecodeError)?;
-        let time_and_random = u128::from_be_bytes(bytes[..].try_into().unwrap());
-        let combined = ((prefix as u128) << 112) | time_and_random;
 
-        Ok(Plid(combined))
+        Ok(Plid(bytes))
     }
 }
 
@@ -672,7 +679,7 @@ impl fmt::Display for Plid {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let prefix_bytes = self.as_prefix_bytes();
         let prefix = prefix_bytes_as_str(&prefix_bytes);
-        let rest = &self.0.to_be_bytes()[2..];
+        let rest = &self.0[2..];
         let base32_encoder: Base32Encoder = rest.into();
         write!(f, "{}{}{}", prefix, SEPARATOR, base32_encoder)
     }
@@ -724,6 +731,7 @@ mod rust_tests {
     use quickcheck::{Arbitrary, Gen};
 
     use quickcheck_macros::quickcheck;
+    use static_assertions::const_assert_eq;
 
     use super::*;
 
@@ -766,27 +774,44 @@ mod rust_tests {
 
     #[test]
     fn test_plid_display() {
-        let plid = Plid(0x1882_019b1a078508_5b39ca05003e1307);
+        let plid = Plid([
+            0x18, 0x82, // prefix
+            0x01, 0x9b, 0x1a, 0x07, 0x85, 0x08, // timestamp
+            0x5b, 0x39, 0xca, 0x05, 0x00, 0x3e, 0x13, 0x07, // random
+        ]);
         assert_eq!(plid.to_string(), "cba_06DHM1W511DKKJG500Z161R");
 
-        let plid = super::Plid(0x1880_019b1a078508_5b39ca05003e1307);
+        let plid = super::Plid([
+            0x18, 0x80, // prefix
+            0x01, 0x9b, 0x1a, 0x07, 0x85, 0x08, // timestamp
+            0x5b, 0x39, 0xca, 0x05, 0x00, 0x3e, 0x13, 0x07, // random
+        ]);
         assert_eq!(plid.to_string(), "cb_06DHM1W511DKKJG500Z161R");
 
-        let plid = super::Plid(0x1800_019b1a078508_5b39ca05003e1307);
+        let plid = super::Plid([
+            0x18, 0x00, // prefix
+            0x01, 0x9b, 0x1a, 0x07, 0x85, 0x08, // timestamp
+            0x5b, 0x39, 0xca, 0x05, 0x00, 0x3e, 0x13, 0x07, // random
+        ]);
         assert_eq!(plid.to_string(), "c_06DHM1W511DKKJG500Z161R");
 
-        let plid = super::Plid(0x0800_ffffffffffff_ffffffffffffffff);
+        let plid = super::Plid([
+            0x08, 0x00, // prefix
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // timestamp
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // random
+        ]);
         assert_eq!(plid.to_string(), "a_ZZZZZZZZZZZZZZZZZZZZZZR");
     }
 
     #[test]
     fn test_plid_parse() {
-        // Time: 0x019B1A078508
-        // Random: 0x5b39ca05003e1307
-        // Full: 0x019B1A0785085b39ca05003e1307
         let plid = "cba_06DHM1W511DKKJG500Z161R";
         let parsed: Plid = plid.parse().unwrap();
-        assert_eq!(parsed, Plid(0x1882_019b1a078508_5b39ca05003e1307));
+        assert_eq!(parsed, Plid([
+            0x18, 0x82, // prefix
+            0x01, 0x9b, 0x1a, 0x07, 0x85, 0x08, // timestamp
+            0x5b, 0x39, 0xca, 0x05, 0x00, 0x3e, 0x13, 0x07, // random
+        ]));
     }
 
     #[test]
@@ -795,7 +820,11 @@ mod rust_tests {
         // lowercase equivalents (e.g. 'I' and 'L' parse as '1')
         let plid = "cba_06Dhm1w511DkkjG500Z161R";
         let parsed: Plid = plid.parse().expect("Should parse lowercase base32");
-        assert_eq!(parsed, Plid(0x1882_019b1a078508_5b39ca05003e1307));
+        assert_eq!(parsed, Plid([
+            0x18, 0x82, // prefix
+            0x01, 0x9b, 0x1a, 0x07, 0x85, 0x08, // timestamp
+            0x5b, 0x39, 0xca, 0x05, 0x00, 0x3e, 0x13, 0x07, // random
+        ]));
     }
 
     #[test]
@@ -804,7 +833,11 @@ mod rust_tests {
         // 'I'/'L'/'l' for '1' and 'O' for '0
         let plid = "cba_06DHMlW5ILDKKJG5OoZ161R";
         let parse: Plid = plid.parse().expect("Should parse lowercase base32");
-        assert_eq!(parse, Plid(0x1882_019b1a078508_5b39ca05003e1307));
+        assert_eq!(parse, Plid([
+            0x18, 0x82, // prefix
+            0x01, 0x9b, 0x1a, 0x07, 0x85, 0x08, // timestamp
+            0x5b, 0x39, 0xca, 0x05, 0x00, 0x3e, 0x13, 0x07, // random
+        ]));
     }
 
     #[test]
@@ -840,7 +873,11 @@ mod rust_tests {
     fn test_plid_parse_uppercase_prefix() {
         let plid = "ABZ_06DHM1W511DKKJG500Z161R";
         let parsed: Plid = plid.parse().expect("Should parse uppercase prefix");
-        assert_eq!(parsed, Plid(0x08B4_019b1a078508_5b39ca05003e1307));
+        assert_eq!(parsed, Plid([
+            0x08, 0xb4, // prefix
+            0x01, 0x9b, 0x1a, 0x07, 0x85, 0x08, // timestamp
+            0x5b, 0x39, 0xca, 0x05, 0x00, 0x3e, 0x13, 0x07, // random
+        ]));
     }
 
     #[test]
@@ -885,7 +922,11 @@ mod rust_tests {
 
     #[test]
     fn test_timestamp_extraction() {
-        let plid = Plid(0x4304_019b1a078508_5b39ca05003e1307);
+        let plid = Plid([
+            0x43, 0x04, // prefix
+            0x01, 0x9b, 0x1a, 0x07, 0x85, 0x08, // timestamp
+            0x5b, 0x39, 0xca, 0x05, 0x00, 0x3e, 0x13, 0x07, // random
+        ]);
         let duration_since_epoch = plid.as_duration_since_epoch();
         assert_eq!(duration_since_epoch.as_millis(), 0x019B1A078508);
     }
@@ -926,6 +967,7 @@ mod rust_tests {
     }
 
     static ASCII_LOWERCASE: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+    const TIME_MASK: u64 = 0x0000_FFFF_FFFF_FFFF_u64;
 
     impl Arbitrary for Plid {
         fn arbitrary(g: &mut Gen) -> Self {
@@ -960,6 +1002,12 @@ mod rust_tests {
             ArbitraryPrefix(prefix)
         }
     }
+
+    const _: () = {
+        const_assert_eq!(std::mem::size_of::<Plid>(), 16);
+        // ALIGNMENT = char in Postgres means 1 byte alignment, Rust MUST match that.
+        const_assert_eq!(std::mem::align_of::<Plid>(), 1);
+    };
 }
 
 #[cfg(any(test, feature = "pg_test"))]
@@ -985,7 +1033,11 @@ mod tests {
         let plid: BoxedPlid = Spi::get_one("SELECT 'c_06DHM1W511DKKJG500Z161R'::plid;")
             .expect("plid cast to not fail")
             .expect("plid not null");
-        assert_eq!(*plid, Plid(0x1800_019b1a078508_5b39ca05003e1307));
+        assert_eq!(*plid, Plid([
+            0x18, 0x00, // prefix
+            0x01, 0x9b, 0x1a, 0x07, 0x85, 0x08, // timestamp
+            0x5b, 0x39, 0xca, 0x05, 0x00, 0x3e, 0x13, 0x07, // random
+        ]));
     }
 
     #[pg_test]
