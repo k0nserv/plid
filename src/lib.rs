@@ -270,7 +270,8 @@ fn prefix_bytes_as_str(prefix: &[u8; PREFIX_LEN]) -> &str {
     str::from_utf8(&prefix[..first_zero]).expect("Valid UTF-8 because only a-z used")
 }
 
-#[pg_extern(immutable)]
+// TODO: Can this be `parallel_safe`? Does pgalloc allow that?
+#[pg_extern(immutable, strict)]
 fn plid_in(input: &core::ffi::CStr) -> BoxedPlid {
     let s = input.to_str().expect("Valid UTF-8 string");
     let parsed = s.parse();
@@ -293,7 +294,7 @@ fn plid_in(input: &core::ffi::CStr) -> BoxedPlid {
     alloc.into_pg_boxed()
 }
 
-#[pg_extern(immutable)]
+#[pg_extern(immutable, strict, parallel_safe)]
 fn plid_out(plid: BoxedPlid) -> &'static CStr {
     let mut sb = StringInfo::new();
     write!(sb, "{plid}").expect("Writing to StringInfo cannot fail");
@@ -340,7 +341,8 @@ fn plid_send(plid: BoxedPlid) -> Vec<u8> {
 }
 
 /// Receive an instance of a plid in Postgres's internal format, return a BoxedPlid.
-#[pg_extern(immutable, strict, parallel_safe)]
+// TOOD: Can this be `parallel_safe`? Does pgalloc allow that?
+#[pg_extern(immutable, strict)]
 fn plid_recv(mut internal: pgrx::datum::Internal) -> BoxedPlid {
     // SAFETY: Postgres guarantees that that this is a valid StringInfoData pointer
     let string_info = unsafe {
