@@ -36,6 +36,7 @@ pgrx-tests = "=0.16.1"
 quickcheck = "1.0.3"
 quickcheck_macros = "1"
 criterion = "0.8"
+static_assertions = "1.1.0"
 
 [profile.dev]
 panic = "unwind"
