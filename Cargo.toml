@@ -5,11 +5,7 @@ edition = "2021"
 authors = ["Hugo Tunius <h@tunius.se>"]
 
 [lib]
-crate-type = ["cdylib", "lib"]
-
-[[bin]]
-name = "pgrx_embed_plid"
-path = "./src/bin/pgrx_embed.rs"
+crate-type = ["cdylib"]
 
 [[bench]]
 name = "bench"
@@ -29,10 +25,10 @@ pg18 = ["pgrx/pg18", "pgrx-tests/pg18" ]
 pg_test = []
 
 [dependencies]
-pgrx = "=0.16.1"
+pgrx = "0.18.0"
 
 [dev-dependencies]
-pgrx-tests = "=0.16.1"
+pgrx-tests = "0.18.0"
 quickcheck = "1.0.3"
 quickcheck_macros = "1"
 criterion = "0.8"

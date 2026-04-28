@@ -6,11 +6,12 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use pgrx::pgrx_sql_entity_graph::metadata::{
-    ArgumentError, Returns, ReturnsError, SqlMapping, SqlTranslatable,
+    ArgumentError, ReturnsError, ReturnsRef, SqlMappingRef, SqlTranslatable,
+    TypeOrigin,
 };
+
 use pgrx::StringInfo;
 use pgrx::{pg_shmem_init, prelude::*, PGRXSharedMemory, PgLwLock};
-
 mod base32;
 use base32::Base32Encoder;
 
@@ -547,14 +548,14 @@ extension_sql!(
 //
 // SAFETY: We have implement ed the required methods to correctly map the `Plid` type
 // to the corresponding SQL type `plid`.
-unsafe impl SqlTranslatable for Plid {
-    fn argument_sql() -> Result<SqlMapping, ArgumentError> {
-        Ok(SqlMapping::literal("plid"))
-    }
 
-    fn return_sql() -> Result<Returns, ReturnsError> {
-        Ok(Returns::One(SqlMapping::literal("plid")))
-    }
+unsafe impl SqlTranslatable for Plid {
+    const TYPE_IDENT: &'static str = pgrx::pgrx_resolved_type!(Plid);
+    const TYPE_ORIGIN: TypeOrigin = TypeOrigin::ThisExtension;
+    const ARGUMENT_SQL: Result<SqlMappingRef, ArgumentError> =
+        Ok(SqlMappingRef::literal("plid"));
+    const RETURN_SQL: Result<ReturnsRef, ReturnsError> =
+        Ok(ReturnsRef::One(SqlMappingRef::literal("plid")));
 }
 
 impl FromStr for Plid {
